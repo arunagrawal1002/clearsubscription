@@ -2,14 +2,14 @@
 
 import { Logo } from "@/components/logo";
 import { saveSubscriptions, META_KEY } from "@/lib/storage";
-import { subscriptionSchema } from "@/lib/types";
+import { scanCoverageSchema, subscriptionSchema } from "@/lib/types";
 import { CheckIcon, ExclamationTriangleIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
-const responseSchema = z.object({ subscriptions: z.array(subscriptionSchema), shortlisted: z.number(), invalidResponses: z.number(), demo: z.boolean() });
+const responseSchema = z.object({ subscriptions: z.array(subscriptionSchema), shortlisted: z.number(), invalidResponses: z.number(), demo: z.boolean(), coverage: scanCoverageSchema.optional() });
 const stages = ["Finding likely subscription emails", "Removing promotional emails", "Analysing billing details", "Preparing dashboard"];
 
 export function ScanExperience() {
@@ -32,7 +32,7 @@ export function ScanExperience() {
         if (!alive || controller.signal.aborted) return;
         setStage(3);
         saveSubscriptions(data.subscriptions);
-        localStorage.setItem(META_KEY, JSON.stringify({ demo: data.demo, shortlisted: data.shortlisted, invalidResponses: data.invalidResponses, scannedAt: new Date().toISOString() }));
+        localStorage.setItem(META_KEY, JSON.stringify({ demo: data.demo, shortlisted: data.shortlisted, invalidResponses: data.invalidResponses, coverage: data.coverage ?? null, scannedAt: new Date().toISOString() }));
         window.setTimeout(() => router.push("/dashboard"), 650);
       } catch (cause) {
         if (!alive || controller.signal.aborted) return;
