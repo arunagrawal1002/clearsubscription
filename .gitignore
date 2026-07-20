@@ -8,10 +8,28 @@
 # production
 /build
 
-# local env files
-.env
-.env.local
-.env.*.local
+# local environment and secrets
+.env*
+!.env.example
+client_secret*.json
+credentials*.json
+google-credentials*.json
+service-account*.json
+oauth*.json
+token*.json
+*access-token*
+*refresh-token*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# personal email exports
+/gmail-data/
+/gmail-export/
+/Takeout/
+*.mbox
+*.eml
 
 # logs and editor files
 npm-debug.log*
