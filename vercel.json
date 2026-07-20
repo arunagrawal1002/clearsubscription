@@ -1,0 +1,6 @@
+{
+  "framework": "nextjs",
+  "functions": {
+    "app/api/scan/route.ts": { "maxDuration": 60 }
+  }
+}
