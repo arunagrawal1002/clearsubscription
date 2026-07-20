@@ -53,3 +53,16 @@ export type CandidateEmail = {
   receivedDate: string;
   snippet: string;
 };
+
+export const scanCoverageSchema = z.object({
+  windowMonths: z.number(),
+  windowStart: z.string(),
+  matchedEstimate: z.number(),
+  inspectedMessages: z.number(),
+  distinctSenders: z.number(),
+  bodiesFetched: z.number(),
+  truncated: z.boolean(),
+  truncationReason: z.enum(["none", "message_limit", "body_limit", "time_budget"]),
+});
+
+export type ScanCoverage = z.infer<typeof scanCoverageSchema>;
