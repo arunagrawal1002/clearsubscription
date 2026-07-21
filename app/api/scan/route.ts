@@ -6,6 +6,7 @@ import { demoSubscriptions } from "@/lib/demo-data";
 import { SCAN_WINDOW_MONTHS, scanWindowStart, shortlistGmailEmails } from "@/lib/gmail";
 import { GMAIL_COOKIE, LEGACY_GMAIL_COOKIE, refreshGmailToken, sealGmailToken, unsealGmailToken } from "@/lib/gmail-token";
 import { buildSubscriptionId } from "@/lib/utils";
+import { groupCandidatesByVendor } from "@/lib/vendor";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -45,21 +46,23 @@ export async function POST(request: Request) {
     const { candidates, coverage } = await shortlistGmailEmails(token.accessToken);
     if (!process.env.OPENAI_API_KEY) return NextResponse.json({ error: "OpenAI is not configured. Add OPENAI_API_KEY or use demo mode.", code: "OPENAI_NOT_CONFIGURED" }, { status: 503 });
 
+    const vendorGroups = groupCandidatesByVendor(candidates);
     const safetyIdentifier = crypto.createHash("sha256").update(session.user.email || session.user.name || "clearsubscription-user").digest("hex");
-    const settled = await Promise.allSettled(candidates.map((email) => classifyEmail(email, safetyIdentifier)));
+    const settled = await Promise.allSettled(vendorGroups.map(({ candidate }) => classifyEmail(candidate, safetyIdentifier)));
     let invalidResponses = 0;
     const subscriptions = settled.flatMap((result, index) => {
       if (result.status === "rejected") { invalidResponses += 1; return []; }
       const classification = result.value;
       if (!classification.isSubscriptionEmail) return [];
-      const email = candidates[index];
-      return [{ ...classification, id: buildSubscriptionId(classification.provider, classification.subscriptionName), sourceEmailId: email.id, subject: email.subject, sender: email.sender, receivedDate: email.receivedDate, userStatus: null, duplicateCount: 1, isDemo: false }];
+      const group = vendorGroups[index];
+      const email = group.candidate;
+      return [{ ...classification, id: buildSubscriptionId(group.key, group.key), sourceEmailId: email.id, subject: email.subject, sender: email.sender, receivedDate: email.receivedDate, userStatus: null, duplicateCount: group.sourceEmails.length, isDemo: false }];
     });
-    if (candidates.length > 0 && invalidResponses === candidates.length) return NextResponse.json({ error: "GPT-5.6 returned no valid structured results. Please retry.", code: "INVALID_GPT_RESPONSE" }, { status: 502 });
+    if (vendorGroups.length > 0 && invalidResponses === vendorGroups.length) return NextResponse.json({ error: "GPT-5.6 returned no valid structured results. Please retry.", code: "INVALID_GPT_RESPONSE" }, { status: 502 });
 
     return NextResponse.json({
-      subscriptions: deduplicateSubscriptions(subscriptions),
-      shortlisted: candidates.length,
+      subscriptions,
+      shortlisted: vendorGroups.length,
       invalidResponses,
       demo: false,
       coverage,
