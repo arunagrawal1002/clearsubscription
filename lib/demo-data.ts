@@ -1,5 +1,20 @@
 import type { CandidateEmail, Subscription } from "@/lib/types";
 
+function dateInDays(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+const demoRenewals: Record<string, string | null> = {
+  "demo-fitlife": dateInDays(3),
+  "demo-streamplus": dateInDays(8),
+  "demo-designcloud-old": dateInDays(12),
+  "demo-designcloud": dateInDays(12),
+  "demo-cloudbox": null,
+  "demo-learnnow": null,
+};
+
 export const demoEmails: CandidateEmail[] = [
   { id: "demo-fitlife", subject: "Your FitLife Gym membership is active", sender: "FitLife Gym <hello@fitlife.example>", receivedDate: "2026-07-03T09:00:00Z", snippet: "Thanks for being a FitLife member. Your monthly membership payment of $34.99 was received on July 3, 2026. Your next billing date is August 3, 2026." },
   { id: "demo-streamplus", subject: "Your StreamPlus renewal receipt", sender: "StreamPlus <billing@streamplus.example>", receivedDate: "2026-07-12T11:20:00Z", snippet: "We received your payment of $15.99 for StreamPlus Premium. Your monthly plan renews on August 12, 2026." },
@@ -23,7 +38,8 @@ export const demoSubscriptions: Subscription[] = demoEmails.map((email, index) =
   return {
     id: row[0], sourceEmailId: email.id, subject: email.subject, sender: email.sender, receivedDate: email.receivedDate,
     isSubscriptionEmail: true, provider: row[1], subscriptionName: row[2], emailType: row[3], serviceCategory: row[4], amount: row[5], currency: row[6], billingFrequency: row[7],
-    paymentDate: row[8], renewalDate: row[9], trialEndDate: row[10], possibleStatus: row[11], confidence: row[12], evidenceSnippet: email.snippet,
-    userStatus: null, duplicateCount: 1, isDemo: true,
+    paymentDate: row[8], renewalDate: demoRenewals[email.id] ?? row[9], trialEndDate: row[10], possibleStatus: row[11], confidence: row[12], evidenceSnippet: email.snippet,
+    userStatus: ["demo-fitlife", "demo-streamplus", "demo-designcloud"].includes(email.id) ? "active" : email.id === "demo-cloudbox" ? "not_sure" : null,
+    duplicateCount: 1, isDemo: true,
   };
 });

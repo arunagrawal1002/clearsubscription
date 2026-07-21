@@ -3,6 +3,7 @@
 import { DemoButton } from "@/components/demo-button";
 import { Logo } from "@/components/logo";
 import { SubscriptionCard } from "@/components/subscription-card";
+import { bucketUpcomingRenewals } from "@/lib/renewal-calendar";
 import { loadSubscriptions, META_KEY, saveSubscriptions } from "@/lib/storage";
 import type { Subscription, UserStatus } from "@/lib/types";
 import { formatMoney, totalByCurrency, unpricedByPeriod } from "@/lib/utils";
@@ -51,6 +52,7 @@ export function DashboardClient() {
   const subscriptionItems = countable.filter((item) => item.serviceCategory === "subscription");
   const spend = totalByCurrency(subscriptionItems);
   const unpriced = unpricedByPeriod(subscriptionItems);
+  const upcomingCount = bucketUpcomingRenewals(items).days.flatMap((day) => day.subscriptions).length;
 
   const metrics = {
     total: items.length,
@@ -78,7 +80,7 @@ export function DashboardClient() {
       {isDemo && <div className="border-b border-[#e1be46]/30 bg-[#fff4c7] px-5 py-2.5 text-center text-xs font-bold text-[#715817]">Fictional demo data — no real inbox or API was used.</div>}
       <section className="mx-auto max-w-7xl px-5 pb-16 pt-10 sm:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#35543f]"><SparklesIcon className="size-4" /> Scan complete</div><h1 className="display-font mt-3 text-5xl sm:text-6xl">Your subscription picture</h1><p className="mt-3 max-w-2xl text-[#6d776f]">AI predictions are a starting point. Confirm each card to make the dashboard yours.</p></div>
+          <div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#35543f]"><SparklesIcon className="size-4" /> Scan complete</div><h1 className="display-font mt-3 text-5xl sm:text-6xl">Your subscription picture</h1><p className="mt-3 max-w-2xl text-[#6d776f]">AI predictions are a starting point. Confirm each card to make the dashboard yours.</p><Link href="/dashboard/renewals" className="mt-4 inline-flex rounded-full bg-[#d8f36a] px-4 py-2 text-sm font-bold text-[#17231d]">{upcomingCount} charge{upcomingCount === 1 ? "" : "s"} in the next 14 days →</Link></div>
           <div className="min-w-64 rounded-2xl bg-[#35543f] p-5 text-white"><div className="flex justify-between text-xs font-bold"><span>Review progress</span><span>{confirmed}/{items.length}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-[#d8f36a] transition-all" style={{ width: `${items.length ? confirmed / items.length * 100 : 0}%` }} /></div></div>
         </div>
         <div className="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
