@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@heroicons/react": "latest",
+    "@vercel/analytics": "latest",
     "next": "latest",
     "next-auth": "beta",
     "openai": "latest",
