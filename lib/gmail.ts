@@ -226,9 +226,9 @@ export function isLikelySubscription(email: Omit<CandidateEmail, "id">) {
 /**
  * Picks which messages are worth a body download and a GPT call.
  *
- * Newest message per sender carries current pricing; oldest distinguishes a real
- * recurring subscription from a one-off purchase and exposes price rises.
- * Everything between is redundant, so cost scales with vendors, not emails.
+ * Billing evidence in the subject is a better predictor than recency: vendors'
+ * newest messages are often promotions, while the receipt may be older.
+ * The per-sender cap keeps cost scaling with vendors, not emails.
  */
 export function selectPerSender(headers: MessageHeader[], perSender = MAX_EMAILS_PER_SENDER) {
   const groups = new Map<string, MessageHeader[]>();
@@ -239,15 +239,28 @@ export function selectPerSender(headers: MessageHeader[], perSender = MAX_EMAILS
   const selected: MessageHeader[] = [];
   const ordered = [...groups.values()].sort((a, b) => b.length - a.length);
   for (const group of ordered) {
-    const sorted = [...group].sort((a, b) => b.receivedAt - a.receivedAt);
-    const take = Math.min(perSender, sorted.length);
-    selected.push(sorted[0]);
-    if (take >= 2) selected.push(sorted[sorted.length - 1]);
-    for (let i = 1; i < sorted.length - 1 && selected.length % perSender !== 0 && take > 2; i++) {
-      selected.push(sorted[i]);
-    }
+    const ranked = [...group].sort((a, b) => {
+      const scoreDifference = billingSubjectScore(b.subject) - billingSubjectScore(a.subject);
+      if (scoreDifference !== 0) return scoreDifference;
+      const dateDifference = b.receivedAt - a.receivedAt;
+      return dateDifference !== 0 ? dateDifference : a.id.localeCompare(b.id);
+    });
+    selected.push(...ranked.slice(0, perSender));
   }
   return { selected, distinctSenders: groups.size };
+}
+
+const STRONG_BILLING_SUBJECT_TERMS = [
+  "receipt", "invoice", "payment", "charged", "paid", "debited", "renewal", "order confirmation", "bill",
+];
+const NEGATIVE_BILLING_SUBJECT_TERMS = [
+  "offer", "sale", "save", "deal", "newsletter", "digest", "update", "tips", "webinar",
+];
+
+function billingSubjectScore(subject: string) {
+  const normalized = subject.toLowerCase();
+  return STRONG_BILLING_SUBJECT_TERMS.filter((term) => normalized.includes(term)).length * 2
+    - NEGATIVE_BILLING_SUBJECT_TERMS.filter((term) => normalized.includes(term)).length;
 }
 
 // ---------------------------------------------------------------------------

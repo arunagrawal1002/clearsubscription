@@ -125,7 +125,19 @@ describe("isLikelyBillingHeader", () => {
 });
 
 describe("selectPerSender", () => {
-  it("collapses many emails from one vendor into two", () => {
+  it("prioritizes billing subjects over newer promotions", () => {
+    const messages = [
+      header({ id: "offer", subject: "Big summer offer", receivedAt: 5 }),
+      header({ id: "update", subject: "Product update", receivedAt: 4 }),
+      header({ id: "receipt", subject: "Your payment receipt", receivedAt: 3 }),
+      header({ id: "tips", subject: "Weekly tips", receivedAt: 2 }),
+      header({ id: "newsletter", subject: "Monthly newsletter", receivedAt: 1 }),
+    ];
+
+    expect(selectPerSender(messages).selected.map(({ id }) => id)).toContain("receipt");
+  });
+
+  it("collapses many emails from one vendor into the two newest when billing signals tie", () => {
     const many = Array.from({ length: 40 }, (_, i) =>
       header({ id: `n${i}`, senderDomain: "netflix.com", receivedAt: i }),
     );
@@ -133,7 +145,7 @@ describe("selectPerSender", () => {
     expect(distinctSenders).toBe(1);
     expect(selected).toHaveLength(2);
     expect(selected[0].id).toBe("n39"); // newest, for current pricing
-    expect(selected[1].id).toBe("n0"); // oldest, to prove recurrence
+    expect(selected[1].id).toBe("n38"); // deterministic recency tie-break
   });
 
   it("does not duplicate a vendor with a single email", () => {
