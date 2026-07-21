@@ -27,6 +27,14 @@ function errShape(error: unknown): OpenAIErrorShape {
   return { status: e.status, code: e.code, message: error instanceof Error ? error.message : String(error) };
 }
 
+// A fatal error will hit every email identically (bad key, no credit, no model
+// access), so there is no point classifying the rest — bail out fast and return
+// the accurate message instead of timing the function out.
+function isFatalClassifyError(error: unknown): boolean {
+  const { status, code } = errShape(error);
+  return status === 401 || status === 403 || (status === 429 && code === "insufficient_quota");
+}
+
 // Retry only failures that a retry can actually help: rate limits (but not an
 // empty balance) and upstream 5xx. Auth/quota/model errors fail fast.
 async function classifyWithRetry(candidate: CandidateEmail, safetyIdentifier: string): Promise<Classification> {
@@ -110,7 +118,16 @@ export async function POST(request: Request) {
 
     const vendorGroups = groupCandidatesByVendor(candidates);
     const safetyIdentifier = crypto.createHash("sha256").update(session.user.email || session.user.name || "clearsubscription-user").digest("hex");
-    const settled = await mapWithConcurrency(vendorGroups, CLASSIFY_CONCURRENCY, ({ candidate }) => classifyWithRetry(candidate, safetyIdentifier));
+    let fatalError: unknown = null;
+    const settled = await mapWithConcurrency(vendorGroups, CLASSIFY_CONCURRENCY, async ({ candidate }) => {
+      if (fatalError) throw fatalError;
+      try {
+        return await classifyWithRetry(candidate, safetyIdentifier);
+      } catch (error) {
+        if (isFatalClassifyError(error)) fatalError = error;
+        throw error;
+      }
+    });
     let invalidResponses = 0;
     const failureReasons: unknown[] = [];
     const subscriptions = settled.flatMap((result, index) => {

@@ -25,7 +25,10 @@ Currency must be the ISO code actually evidenced in the email (INR, USD, GBP, EU
 
 export async function classifyEmail(email: CandidateEmail, safetyIdentifier: string): Promise<Classification> {
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_NOT_CONFIGURED");
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  // Retries are handled in the scan route so we can skip pointless ones (e.g.
+  // insufficient_quota). Leaving the SDK's default internal retries on made a
+  // quota-blocked key back off repeatedly and time the whole function out.
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 });
   const response = await client.responses.parse({
     model: "gpt-5.6",
     reasoning: { effort: "low" },
