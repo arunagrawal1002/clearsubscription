@@ -22,6 +22,12 @@ export const userStatusSchema = z.enum(["active", "cancelled", "not_mine", "not_
  */
 export const serviceCategorySchema = z.enum(["subscription", "utility", "one_off", "other"]);
 
+const renewalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}, "Expected a valid YYYY-MM-DD calendar date");
+
 export const classificationSchema = z.object({
   isSubscriptionEmail: z.boolean(),
   provider: z.string(),
@@ -32,7 +38,7 @@ export const classificationSchema = z.object({
   currency: z.string().nullable(),
   billingFrequency: billingFrequencySchema,
   paymentDate: z.string().nullable(),
-  renewalDate: z.string().nullable(),
+  renewalDate: renewalDateSchema.nullable(),
   trialEndDate: z.string().nullable(),
   possibleStatus: predictedStatusSchema,
   confidence: z.number().min(0).max(1),
@@ -43,6 +49,8 @@ export const subscriptionSchema = classificationSchema.extend({
   // Defaulted here (but required of the model above) so results stored before
   // this field existed still parse instead of being silently dropped.
   serviceCategory: serviceCategorySchema.default("subscription"),
+  // Preserve already-saved browser records while new model output is strict.
+  renewalDate: z.string().nullable(),
   id: z.string(),
   sourceEmailId: z.string(),
   subject: z.string(),

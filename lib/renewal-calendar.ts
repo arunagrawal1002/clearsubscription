@@ -20,6 +20,11 @@ export function parseRenewalDate(value: string) {
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
+function isValidRenewalDate(value: string) {
+  const date = parseRenewalDate(value);
+  return !Number.isNaN(date.getTime()) && dateKey(date) === value;
+}
+
 export function bucketUpcomingRenewals(subscriptions: Subscription[], today = new Date()) {
   const days = Array.from({ length: 14 }, (_, index) => {
     const date = addLocalDays(today, index + 1);
@@ -35,13 +40,18 @@ export function bucketUpcomingRenewals(subscriptions: Subscription[], today = ne
   const awaitingConfirmation = subscriptions.filter((item) => item.userStatus === null || item.userStatus === "not_sure").length;
   const lastDate = days[days.length - 1].date;
   let nextBeyondWindow: Subscription | null = null;
+  let pastOrInvalidConfirmed = 0;
 
   for (const item of active) {
     if (!item.renewalDate) continue;
+    if (!isValidRenewalDate(item.renewalDate) || item.renewalDate < days[0].date) {
+      pastOrInvalidConfirmed += 1;
+      continue;
+    }
     const day = byDate.get(item.renewalDate);
     if (day) day.subscriptions.push(item);
     else if (item.renewalDate > lastDate && (!nextBeyondWindow || item.renewalDate < nextBeyondWindow.renewalDate!)) nextBeyondWindow = item;
   }
 
-  return { days, undatedConfirmed, awaitingConfirmation, nextBeyondWindow };
+  return { days, undatedConfirmed, pastOrInvalidConfirmed, awaitingConfirmation, nextBeyondWindow };
 }

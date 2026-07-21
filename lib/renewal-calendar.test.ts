@@ -38,4 +38,13 @@ describe("bucketUpcomingRenewals", () => {
     expect(result.undatedConfirmed).toBe(1);
     expect(result.awaitingConfirmation).toBe(1);
   });
+
+  it("counts past or invalid confirmed dates instead of silently dropping them", () => {
+    const result = bucketUpcomingRenewals([
+      make({ id: "yesterday", renewalDate: "2026-07-20" }),
+      make({ id: "today", renewalDate: "2026-07-21" }),
+      make({ id: "invalid", renewalDate: "August 3, 2026" }),
+    ], today);
+    expect(result.pastOrInvalidConfirmed).toBe(3);
+  });
 });

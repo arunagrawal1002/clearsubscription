@@ -52,6 +52,7 @@ export function DashboardClient() {
   const subscriptionItems = countable.filter((item) => item.serviceCategory === "subscription");
   const spend = totalByCurrency(subscriptionItems);
   const unpriced = unpricedByPeriod(subscriptionItems);
+  const unconfirmedPredictions = subscriptionItems.filter((item) => item.userStatus === null || item.userStatus === "not_sure").length;
   const upcomingCount = bucketUpcomingRenewals(items).days.flatMap((day) => day.subscriptions).length;
 
   const metrics = {
@@ -90,7 +91,7 @@ export function DashboardClient() {
             { Icon: XCircleIcon, label: "Cancelled", value: metrics.cancelled, color: "bg-[#e7e7e2]" },
             { Icon: ExclamationCircleIcon, label: "Needs review", value: metrics.review, color: "bg-[#ffe6b4]" },
           ].map(({ Icon, label, value, color }) => <div key={label} className="rounded-2xl border border-[#35543f]/10 bg-white p-5"><div className={`grid size-9 place-items-center rounded-xl ${color}`}><Icon className="size-5" /></div><p className="display-font mt-5 text-4xl">{value}</p><p className="mt-1 text-xs font-bold text-[#7d897f]">{label}</p></div>)}
-          <div className="rounded-2xl bg-[#17231d] p-5 text-white"><p className="text-xs font-bold text-white/55">Subscriptions / month</p><p className="display-font mt-6 text-4xl text-[#d8f36a]">{formatMoney(spend.total, spend.code)}</p><p className="mt-1 text-[11px] text-white/50">{[metrics.utilities ? `excludes ${metrics.utilities} utility ${metrics.utilities === 1 ? "bill" : "bills"}` : "known active-like amounts", unpriced ? `${unpriced} with unknown billing period` : null, spend.excluded ? `${spend.excluded} in other currencies` : null, spend.assumed ? "includes assumed currency" : null].filter(Boolean).join(" · ")}</p></div>
+          <div className="rounded-2xl bg-[#17231d] p-5 text-white"><p className="text-xs font-bold text-white/55">Estimated subscriptions / month</p><p className="display-font mt-6 text-4xl text-[#d8f36a]">{formatMoney(spend.total, spend.code)}</p><p className="mt-1 text-[11px] text-white/50">{[unconfirmedPredictions ? `Estimated — includes ${unconfirmedPredictions} unconfirmed prediction${unconfirmedPredictions === 1 ? "" : "s"}` : "Based on confirmed subscriptions", metrics.utilities ? `excludes ${metrics.utilities} utility ${metrics.utilities === 1 ? "bill" : "bills"}` : "known active-like amounts", unpriced ? `${unpriced} with unknown billing period` : null, spend.excluded ? `${spend.excluded} in other currencies` : null, spend.assumed ? "includes assumed currency" : null].filter(Boolean).join(" · ")}</p></div>
         </div>
         <div className="mt-9 flex flex-col gap-4 border-y border-[#35543f]/10 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col gap-3">

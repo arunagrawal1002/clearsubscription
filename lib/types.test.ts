@@ -18,4 +18,8 @@ describe("classificationSchema", () => {
     expect(() => classificationSchema.parse(withoutCategory)).toThrow();
   });
   it("rejects invented service categories", () => expect(() => classificationSchema.parse({ ...valid, serviceCategory: "telecom" })).toThrow());
+  it("rejects renewal dates that are not ISO calendar dates", () => {
+    expect(() => classificationSchema.parse({ ...valid, renewalDate: "August 3, 2026" })).toThrow();
+    expect(() => classificationSchema.parse({ ...valid, renewalDate: "2026-02-30" })).toThrow();
+  });
 });
