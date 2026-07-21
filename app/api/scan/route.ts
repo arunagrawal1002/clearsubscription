@@ -13,10 +13,11 @@ import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
 
-// Classify at most this many emails at once. Firing every shortlisted email in
-// parallel bursts straight past a fresh key's per-minute limit, which returns
-// 429 for the whole batch and surfaces as "no valid structured results".
-const CLASSIFY_CONCURRENCY = 5;
+// Classify this many emails at once. Firing every shortlisted email in one
+// unbounded burst trips a fresh key's per-minute limit; too few workers can't
+// clear a large inbox (60+ emails) inside the Hobby plan's 60s function cap and
+// times out. 10 balances both against a funded key's rate-limit headroom.
+const CLASSIFY_CONCURRENCY = 10;
 // One retry (two attempts total) for transient upstream failures.
 const CLASSIFY_ATTEMPTS = 2;
 
