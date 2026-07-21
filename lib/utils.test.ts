@@ -49,9 +49,16 @@ describe("totalByCurrency", () => {
   });
 
   it("never adds different currencies together", () => {
-    const result = totalByCurrency([make(100, "INR"), make(200, "INR"), make(50, "USD")]);
+    const result = totalByCurrency([make(100, "INR"), make(200, "INR"), make(50, "USD")], "INR");
     expect(result.code).toBe("INR");
     expect(result.total).toBe(300);
     expect(result.excluded).toBe(1);
+  });
+
+  it("prefers the viewer's base currency over the most common currency", () => {
+    const result = totalByCurrency([make(100, "USD"), make(200, "USD"), make(299, "INR")], "INR");
+    expect(result.code).toBe("INR");
+    expect(result.total).toBe(299);
+    expect(result.excluded).toBe(2);
   });
 });

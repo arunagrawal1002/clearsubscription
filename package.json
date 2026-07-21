@@ -15,6 +15,7 @@
     "next": "latest",
     "next-auth": "beta",
     "openai": "latest",
+    "pdf-parse": "^2.4.5",
     "react": "latest",
     "react-dom": "latest",
     "zod": "latest"

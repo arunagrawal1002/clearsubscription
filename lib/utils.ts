@@ -105,12 +105,11 @@ export function unpricedByPeriod(items: Subscription[]) {
 }
 
 /**
- * Totals are only meaningful within a single currency. We total the most common
- * currency present and report how many records were left out, rather than adding
- * rupees to dollars and labelling the result with whichever appeared first.
+ * Totals are only meaningful within a single currency. Prefer the viewer's base
+ * currency when it is present, then fall back to the most common currency.
  */
-export function totalByCurrency(items: Subscription[]) {
-  const fallback = viewerCurrency();
+export function totalByCurrency(items: Subscription[], baseCurrency = viewerCurrency()) {
+  const fallback = baseCurrency;
   const counts = new Map<string, number>();
   for (const item of items) {
     if (item.amount === null) continue;
@@ -119,12 +118,14 @@ export function totalByCurrency(items: Subscription[]) {
     counts.set(code, (counts.get(code) ?? 0) + 1);
   }
 
-  let code: string | null = null;
+  let code: string | null = baseCurrency && counts.has(baseCurrency) ? baseCurrency : null;
   let best = 0;
-  for (const [candidate, count] of counts) {
-    if (count > best) {
-      code = candidate;
-      best = count;
+  if (!code) {
+    for (const [candidate, count] of counts) {
+      if (count > best) {
+        code = candidate;
+        best = count;
+      }
     }
   }
 
