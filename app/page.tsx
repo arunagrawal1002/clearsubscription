@@ -22,7 +22,7 @@ export default function Home() {
             Find forgotten <span className="relative inline-block italic text-[#35543f]">subscriptions<span className="absolute -bottom-2 left-0 h-3 w-full -rotate-1 rounded-full bg-[#d8f36a]/70 -z-10" /></span> hiding in your inbox.
           </h1>
           <p className="mt-8 max-w-xl text-lg leading-8 text-[#526158]">
-            SubScam safely shortlists receipts, renewals and trials, then uses GPT-5.6 to turn inbox clutter into one calm, confirmable dashboard.
+            ClearSubscription safely shortlists receipts, renewals and trials, then uses GPT-5.6 to turn inbox clutter into one calm, confirmable dashboard.
           </p>
           <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <GoogleButton />
@@ -61,7 +61,7 @@ export default function Home() {
           {trust.map(([Icon, title, copy]) => <div key={title} className="flex gap-4"><Icon className="size-6 shrink-0 text-[#35543f]" /><div><h2 className="font-bold">{title}</h2><p className="mt-1 text-sm leading-6 text-[#6d776f]">{copy}</p></div></div>)}
         </div>
       </section>
-      <footer className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-xs text-[#7d897f] sm:flex-row sm:items-center sm:justify-between sm:px-8"><p>© 2026 SubScam. Built for consumer clarity.</p><p>Read-only by design · User-confirmed by default</p></footer>
+      <footer className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-xs text-[#7d897f] sm:flex-row sm:items-center sm:justify-between sm:px-8"><p>© 2026 ClearSubscription. Built for consumer clarity.</p><p>Read-only by design · User-confirmed by default</p></footer>
     </main>
   );
 }

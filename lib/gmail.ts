@@ -77,17 +77,89 @@ function decode(data?: string) {
   return Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", rsquo: "'", ndash: "–", mdash: "—", rupee: "₹",
+};
+
+/**
+ * Decodes HTML entities. Indian senders commonly write ₹ as &#8377; or &#x20B9;,
+ * and without this the currency symbol never survives tag-stripping — which both
+ * hides the amount and makes an evidenced currency look unevidenced.
+ */
+export function decodeEntities(value: string) {
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&([a-z]+);/gi, (match, name) => NAMED_ENTITIES[name.toLowerCase()] ?? match);
+}
+
+export function htmlToText(html: string) {
+  return decodeEntities(
+    html
+      .replace(/<(script|style|head)[\s\S]*?<\/\1>/gi, " ")
+      // Hidden preheader text: invisible in the client, pure noise to the model.
+      .replace(/<[^>]+style=("|')[^"']*display\s*:\s*none[^"']*\1[^>]*>[\s\S]*?<\/[^>]+>/gi, " ")
+      .replace(/<(br|\/tr|\/p|\/div|\/td)[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, " "),
+  );
+}
+
+/** Collects every readable part rather than returning the first one found. */
+function collectText(part: GmailPart | undefined, out: { plain: string[]; html: string[] }) {
+  if (!part) return;
+  if (part.body?.data) {
+    if (part.mimeType === "text/plain") out.plain.push(decode(part.body.data));
+    else if (part.mimeType === "text/html") out.html.push(htmlToText(decode(part.body.data)));
+  }
+  for (const child of part.parts || []) collectText(child, out);
+}
+
+/**
+ * Picks the richer representation. A multipart/alternative message often carries
+ * a stub plaintext part ("view this in your browser") alongside the real HTML,
+ * so preferring text/plain unconditionally loses the billing table.
+ */
 function bodyFromPart(part?: GmailPart): string {
   if (!part) return "";
-  if (part.mimeType === "text/plain" && part.body?.data) return decode(part.body.data);
-  for (const child of part.parts || []) {
-    const body = bodyFromPart(child);
-    if (body) return body;
+  const out = { plain: [] as string[], html: [] as string[] };
+  collectText(part, out);
+  const plain = out.plain.join("\n").trim();
+  const html = out.html.join("\n").trim();
+  if (plain && html) return html.length > plain.length * 1.2 ? html : plain;
+  return plain || html || decodeEntities(decode(part.body?.data));
+}
+
+/** Money-like figures and the words that usually sit beside them. */
+const MONEY_PATTERN =
+  /(?:₹|Rs\.?|INR|USD|\$|£|€|AED|amount|premium|total|paid|charged|payable|MRP|invoice|price)\s*[:\-]?\s*[\d,]*\.?\d{0,2}/gi;
+
+/**
+ * Builds the excerpt sent to the model: the opening for context, plus windows
+ * centred on money-like matches. Blind truncation dropped the figure whenever a
+ * sender front-loaded boilerplate, which is most insurers and telecoms.
+ */
+export function billingExcerpt(text: string, limit = 4000) {
+  const clean = text.replace(/[ \t]+/g, " ").replace(/\n{2,}/g, "\n").trim();
+  if (clean.length <= limit) return clean;
+
+  const head = clean.slice(0, 900);
+  const windows: Array<[number, number]> = [];
+  for (const match of clean.matchAll(MONEY_PATTERN)) {
+    const index = match.index ?? 0;
+    if (index < 900) continue;
+    const start = Math.max(900, index - 160);
+    const end = Math.min(clean.length, index + 260);
+    const previous = windows[windows.length - 1];
+    if (previous && start <= previous[1] + 40) previous[1] = Math.max(previous[1], end);
+    else windows.push([start, end]);
   }
-  if (part.mimeType === "text/html" && part.body?.data) {
-    return decode(part.body.data).replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
+
+  let excerpt = head;
+  for (const [start, end] of windows) {
+    if (excerpt.length >= limit) break;
+    excerpt += ` … ${clean.slice(start, Math.min(end, start + (limit - excerpt.length)))}`;
   }
-  return decode(part.body?.data);
+  return excerpt.length > 900 ? excerpt.slice(0, limit) : clean.slice(0, limit);
 }
 
 export function formatGmailDate(date: Date) {
@@ -288,7 +360,7 @@ async function fetchBodies(accessToken: string, headers: MessageHeader[]): Promi
       subject: entry.header.subject,
       sender: entry.header.sender,
       receivedDate: entry.header.receivedDate,
-      snippet: (body || entry.message.snippet || "").slice(0, 1200),
+      snippet: billingExcerpt(body || decodeEntities(entry.message.snippet || "")),
     });
   }
   return candidates;

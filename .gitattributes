@@ -1,0 +1,14 @@
+# Normalize line endings so the repo stops producing whole-file diffs when the
+# tree is touched from a different OS. Text files are stored LF in git and
+# checked out LF; editors on Windows handle this fine.
+* text=auto eol=lf
+
+# Never munge binaries.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

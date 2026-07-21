@@ -11,15 +11,23 @@ export const emailTypeSchema = z.enum([
   "other",
 ]);
 
-export const billingFrequencySchema = z.enum(["monthly", "yearly", "weekly", "unknown"]);
+export const billingFrequencySchema = z.enum(["weekly", "monthly", "quarterly", "yearly", "unknown"]);
 export const predictedStatusSchema = z.enum(["possibly_active", "possibly_cancelled", "needs_review"]);
 export const userStatusSchema = z.enum(["active", "cancelled", "not_mine", "not_sure"]);
+
+/**
+ * What kind of spend this is. A recurring charge is not automatically a
+ * subscription: broadband, mobile and electricity bills recur but are essential
+ * services with no meaningful "cancel and save" decision attached.
+ */
+export const serviceCategorySchema = z.enum(["subscription", "utility", "one_off", "other"]);
 
 export const classificationSchema = z.object({
   isSubscriptionEmail: z.boolean(),
   provider: z.string(),
   subscriptionName: z.string(),
   emailType: emailTypeSchema,
+  serviceCategory: serviceCategorySchema,
   amount: z.number().nullable(),
   currency: z.string().nullable(),
   billingFrequency: billingFrequencySchema,
@@ -32,6 +40,9 @@ export const classificationSchema = z.object({
 });
 
 export const subscriptionSchema = classificationSchema.extend({
+  // Defaulted here (but required of the model above) so results stored before
+  // this field existed still parse instead of being silently dropped.
+  serviceCategory: serviceCategorySchema.default("subscription"),
   id: z.string(),
   sourceEmailId: z.string(),
   subject: z.string(),

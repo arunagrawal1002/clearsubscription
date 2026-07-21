@@ -3,7 +3,7 @@ import { SessionProvider } from "next-auth/react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "SubScam — Find forgotten subscriptions", template: "%s · SubScam" },
+  title: { default: "ClearSubscription — Find forgotten subscriptions", template: "%s · ClearSubscription" },
   description: "Find and confirm recurring subscriptions hiding in your Gmail inbox.",
 };
 

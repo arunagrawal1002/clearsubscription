@@ -11,8 +11,8 @@ export async function GET(request: Request) {
   if (url.searchParams.get("error")) return NextResponse.redirect(new URL("/connect?error=permission_denied", baseUrl));
 
   const cookieStore = await cookies();
-  const expectedState = cookieStore.get("subscam_oauth_state")?.value;
-  const verifier = cookieStore.get("subscam_oauth_verifier")?.value;
+  const expectedState = cookieStore.get("clearsub_oauth_state")?.value;
+  const verifier = cookieStore.get("clearsub_oauth_verifier")?.value;
   const code = url.searchParams.get("code");
   if (!code || !verifier || !expectedState || url.searchParams.get("state") !== expectedState) {
     return NextResponse.redirect(new URL("/connect?error=invalid_oauth_state", baseUrl));
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     expiresAt: Date.now() + data.expires_in * 1000,
     scope: data.scope,
   }), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 30, path: "/" });
-  cookieStore.delete("subscam_oauth_state");
-  cookieStore.delete("subscam_oauth_verifier");
+  cookieStore.delete("clearsub_oauth_state");
+  cookieStore.delete("clearsub_oauth_verifier");
   return NextResponse.redirect(new URL("/scan?auto=1", baseUrl));
 }

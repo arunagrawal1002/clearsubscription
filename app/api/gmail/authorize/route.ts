@@ -13,8 +13,8 @@ export async function GET(request: Request) {
   const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
   const cookieStore = await cookies();
   const secure = process.env.NODE_ENV === "production";
-  cookieStore.set("subscam_oauth_state", state, { httpOnly: true, sameSite: "lax", secure, maxAge: 600, path: "/" });
-  cookieStore.set("subscam_oauth_verifier", verifier, { httpOnly: true, sameSite: "lax", secure, maxAge: 600, path: "/" });
+  cookieStore.set("clearsub_oauth_state", state, { httpOnly: true, sameSite: "lax", secure, maxAge: 600, path: "/" });
+  cookieStore.set("clearsub_oauth_verifier", verifier, { httpOnly: true, sameSite: "lax", secure, maxAge: 600, path: "/" });
 
   const baseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin;
   const params = new URLSearchParams({

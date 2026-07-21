@@ -10,20 +10,20 @@ export const demoEmails: CandidateEmail[] = [
 ];
 
 const details = [
-  ["demo-fitlife", "FitLife Gym", "All Access Membership", "payment_receipt", 34.99, "USD", "monthly", "2026-07-03", "2026-08-03", null, "possibly_active", .98],
-  ["demo-streamplus", "StreamPlus", "Premium", "renewal_reminder", 15.99, "USD", "monthly", "2026-07-12", "2026-08-12", null, "possibly_active", .97],
-  ["demo-designcloud-old", "DesignCloud Pro", "Professional Plan", "price_increase", 240, "USD", "yearly", null, "2026-09-02", null, "possibly_active", .91],
-  ["demo-designcloud", "DesignCloud Pro", "Professional Plan", "renewal_reminder", 240, "USD", "yearly", null, "2026-09-02", null, "possibly_active", .96],
-  ["demo-cloudbox", "CloudBox Storage", "2 TB Plan", "cancellation", null, null, "monthly", null, null, null, "possibly_cancelled", .99],
-  ["demo-learnnow", "LearnNow Academy", "Monthly Learning Plan", "trial_ending", null, null, "unknown", null, null, "2026-07-25", "needs_review", .88],
+  ["demo-fitlife", "FitLife Gym", "All Access Membership", "payment_receipt", "subscription", 34.99, "USD", "monthly", "2026-07-03", "2026-08-03", null, "possibly_active", .98],
+  ["demo-streamplus", "StreamPlus", "Premium", "renewal_reminder", "subscription", 15.99, "USD", "monthly", "2026-07-12", "2026-08-12", null, "possibly_active", .97],
+  ["demo-designcloud-old", "DesignCloud Pro", "Professional Plan", "price_increase", "subscription", 240, "USD", "yearly", null, "2026-09-02", null, "possibly_active", .91],
+  ["demo-designcloud", "DesignCloud Pro", "Professional Plan", "renewal_reminder", "subscription", 240, "USD", "yearly", null, "2026-09-02", null, "possibly_active", .96],
+  ["demo-cloudbox", "CloudBox Storage", "2 TB Plan", "cancellation", "subscription", null, null, "monthly", null, null, null, "possibly_cancelled", .99],
+  ["demo-learnnow", "LearnNow Academy", "Monthly Learning Plan", "trial_ending", "subscription", null, null, "unknown", null, null, "2026-07-25", "needs_review", .88],
 ] as const;
 
 export const demoSubscriptions: Subscription[] = demoEmails.map((email, index) => {
   const row = details[index];
   return {
     id: row[0], sourceEmailId: email.id, subject: email.subject, sender: email.sender, receivedDate: email.receivedDate,
-    isSubscriptionEmail: true, provider: row[1], subscriptionName: row[2], emailType: row[3], amount: row[4], currency: row[5], billingFrequency: row[6],
-    paymentDate: row[7], renewalDate: row[8], trialEndDate: row[9], possibleStatus: row[10], confidence: row[11], evidenceSnippet: email.snippet,
+    isSubscriptionEmail: true, provider: row[1], subscriptionName: row[2], emailType: row[3], serviceCategory: row[4], amount: row[5], currency: row[6], billingFrequency: row[7],
+    paymentDate: row[8], renewalDate: row[9], trialEndDate: row[10], possibleStatus: row[11], confidence: row[12], evidenceSnippet: email.snippet,
     userStatus: null, duplicateCount: 1, isDemo: true,
   };
 });

@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 
-export const GMAIL_COOKIE = "subscam_gmail";
+export const GMAIL_COOKIE = "clearsub_gmail";
+/** Pre-rename cookie name, still read so existing sessions aren't forced to re-consent. */
+export const LEGACY_GMAIL_COOKIE = "subscam_gmail";
 
 export type GmailToken = {
   accessToken: string;

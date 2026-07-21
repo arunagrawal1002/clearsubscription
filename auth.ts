@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: process.env.AUTH_SECRET || (process.env.NODE_ENV !== "production" ? "subscam-local-demo-only-change-me" : undefined),
+  secret: process.env.AUTH_SECRET || (process.env.NODE_ENV !== "production" ? "clearsubscription-local-demo-only-change-me" : undefined),
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,

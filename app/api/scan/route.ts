@@ -4,7 +4,7 @@ import { classifyEmail } from "@/lib/classify";
 import { deduplicateSubscriptions } from "@/lib/dedupe";
 import { demoSubscriptions } from "@/lib/demo-data";
 import { SCAN_WINDOW_MONTHS, scanWindowStart, shortlistGmailEmails } from "@/lib/gmail";
-import { GMAIL_COOKIE, refreshGmailToken, sealGmailToken, unsealGmailToken } from "@/lib/gmail-token";
+import { GMAIL_COOKIE, LEGACY_GMAIL_COOKIE, refreshGmailToken, sealGmailToken, unsealGmailToken } from "@/lib/gmail-token";
 import { buildSubscriptionId } from "@/lib/utils";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Sign in before scanning Gmail.", code: "SIGN_IN_REQUIRED" }, { status: 401 });
   const cookieStore = await cookies();
-  const sealed = cookieStore.get(GMAIL_COOKIE)?.value;
+  const sealed = cookieStore.get(GMAIL_COOKIE)?.value ?? cookieStore.get(LEGACY_GMAIL_COOKIE)?.value;
   if (!sealed) return NextResponse.json({ error: "Connect Gmail before scanning.", code: "GMAIL_NOT_CONNECTED" }, { status: 403 });
 
   try {

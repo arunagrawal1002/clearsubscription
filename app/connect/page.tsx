@@ -25,7 +25,7 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
             <div className="grid size-14 place-items-center rounded-2xl bg-[#d8f36a] text-[#17231d]"><EnvelopeOpenIcon className="size-7" /></div>
             <p className="mt-9 text-xs font-bold uppercase tracking-[0.18em] text-[#d8f36a]">Step 2 of 4</p>
             <h1 className="display-font mt-3 text-5xl leading-[1.02]">Connect Gmail, safely.</h1>
-            <p className="mt-6 leading-7 text-white/70">SubScam uses a separate, read-only Google permission. It searches for likely billing messages first, so your complete inbox is never sent to AI.</p>
+            <p className="mt-6 leading-7 text-white/70">ClearSubscription uses a separate, read-only Google permission. It searches for likely billing messages first, so your complete inbox is never sent to AI.</p>
             <div className="mt-9 rounded-2xl border border-white/15 bg-white/7 p-5">
               <div className="flex gap-3"><ShieldCheckIcon className="size-6 shrink-0 text-[#d8f36a]" /><div><p className="font-bold">Strictly read-only</p><p className="mt-1 text-sm leading-6 text-white/65">No sending, deleting, editing, moving, or labelling. Disconnect anytime in your Google Account.</p></div></div>
             </div>

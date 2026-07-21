@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  billingExcerpt,
   buildSearchQuery,
+  decodeEntities,
   formatGmailDate,
+  htmlToText,
   isLikelyBillingHeader,
   isLikelySubscription,
   scanWindowStart,
@@ -9,6 +12,34 @@ import {
   senderDomain,
   type MessageHeader,
 } from "@/lib/gmail";
+
+describe("body extraction", () => {
+  it("decodes the rupee sign written as an HTML entity", () => {
+    // Indian senders commonly emit &#8377; / &#x20B9;. Left encoded, the currency
+    // looks unevidenced and the amount is unreadable.
+    expect(decodeEntities("&#8377;3,894.00")).toBe("₹3,894.00");
+    expect(decodeEntities("&#x20B9;499")).toBe("₹499");
+  });
+
+  it("drops style and script blocks instead of feeding them to the model", () => {
+    const html = "<head><style>.a{color:red}</style></head><body>Premium &#8377;12,500 due</body>";
+    const text = htmlToText(html);
+    expect(text).toContain("₹12,500");
+    expect(text).not.toContain("color:red");
+  });
+
+  it("keeps an amount that sits beyond the old 1200-character cutoff", () => {
+    // Regression: insurers front-load boilerplate, so blind truncation sent the
+    // model a letterhead and no figure, and it correctly returned null.
+    const body = `${"Dear customer, thank you for banking with us. ".repeat(60)}Total premium payable: ₹18,450.00 for the policy year.`;
+    expect(body.indexOf("18,450")).toBeGreaterThan(1200);
+    expect(billingExcerpt(body)).toContain("18,450");
+  });
+
+  it("leaves short bodies untouched", () => {
+    expect(billingExcerpt("MRP : 3894.00 Speed : 200 Mbps")).toBe("MRP : 3894.00 Speed : 200 Mbps");
+  });
+});
 
 const header = (over: Partial<MessageHeader> = {}): MessageHeader => ({
   id: "1",
