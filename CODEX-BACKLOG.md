@@ -2,6 +2,33 @@
 
 **Read this first, then work top to bottom. Stop at the freeze deadline.**
 
+## Where the code lives
+
+| | |
+|---|---|
+| **Working folder** | `F:\ClearSubWork` — the only folder to edit. All commands run from here. |
+| **Canonical repo** | `https://github.com/arunagrawal1002/clearsubscription` |
+| **Branch to work on** | `fix/extraction`, cut from `main` |
+| **Frozen tag** | `video-build` — the exact build the demo video was recorded against |
+
+`arunagrawal1002/clearsubscription` is the repository of record as of 21 July.
+`shraddha0123-pixel/subscam1` holds the same code under the former product name
+and is **no longer the target** — do not push there, and do not add it as a
+remote.
+
+`F:\ClearSub` is a documents-only folder holding submission material. Its `.git`
+is broken. Never run git commands in it and never treat it as a source checkout.
+
+Confirm the remote before your first push:
+
+```
+git remote -v          # expect origin -> arunagrawal1002/clearsubscription
+git branch --show-current
+```
+
+If `origin` still points at `subscam1`, stop and tell the user rather than
+repointing it yourself.
+
 ## Ground rules
 
 1. **Work on a branch, never on `main`.** `main` is the build the demo video is
