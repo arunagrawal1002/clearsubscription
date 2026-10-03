@@ -63,7 +63,7 @@ export function ScanExperience() {
             <div className="mx-auto max-w-lg rounded-[2rem] bg-white p-8 text-center text-[#17231d] card-shadow sm:p-10">
               <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#fff0ec] text-[#ee765f]"><ExclamationTriangleIcon className="size-7" /></div>
               <h1 className="display-font mt-6 text-4xl">Scan interrupted</h1><p role="alert" className="mt-4 leading-7 text-[#6d776f]">{error.message}</p>
-              <div className="mt-7 grid gap-3"><button onClick={() => window.location.reload()} className="rounded-full bg-[#17231d] px-5 py-3.5 font-bold text-white">Try again</button>{(error.code.includes("GMAIL") || error.code === "SIGN_IN_REQUIRED") && <Link href="/connect" className="rounded-full border border-[#35543f]/20 px-5 py-3.5 font-bold">Reconnect Gmail</Link>}<Link href="/scan?demo=1" className="text-sm font-bold text-[#35543f] underline underline-offset-4">Use fictional demo instead</Link></div>
+              <div className="mt-7 grid gap-3"><button onClick={() => window.location.reload()} className="rounded-full bg-[#17231d] px-5 py-3.5 font-bold text-white">Try again</button>{((error.code.includes("GMAIL") && !["GMAIL_RATE_LIMITED", "GMAIL_API_DISABLED", "GMAIL_OAUTH_CONFIG"].includes(error.code)) || error.code === "SIGN_IN_REQUIRED") && <Link href="/connect" className="rounded-full border border-[#35543f]/20 px-5 py-3.5 font-bold">Reconnect Gmail</Link>}<Link href="/scan?demo=1" className="text-sm font-bold text-[#35543f] underline underline-offset-4">Use fictional demo instead</Link></div>
             </div>
           )}
         </div>

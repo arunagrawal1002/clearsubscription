@@ -1,3 +1,4 @@
+import { classifyGmailResponse, GmailError, isRetryableGmailResponse } from "@/lib/gmail-errors";
 import type { CandidateEmail } from "@/lib/types";
 
 /**
@@ -18,8 +19,16 @@ export const MAX_EMAILS_PER_SENDER = 2;
 /** Gmail's documented maximum page size for users.messages.list. */
 const LIST_PAGE_SIZE = 500;
 
-/** Parallel Gmail requests. */
-const CONCURRENCY = 10;
+/**
+ * Parallel Gmail requests. Gmail allows 250 quota units per user per second and
+ * messages.get costs 5, so ~50 gets/sec. Ten workers on fast metadata calls
+ * overshot that and Gmail answered 403 rateLimitExceeded, which the scan used to
+ * report as "permission denied". Five stays under the limit; retries cover bursts.
+ */
+const CONCURRENCY = 5;
+
+/** Attempts per Gmail request when Google rate-limits or returns 5xx. */
+const GMAIL_ATTEMPTS = 4;
 
 /** Headroom inside the 60s Vercel function limit (see maxDuration in the route). */
 const TIME_BUDGET_MS = 40_000;
@@ -281,13 +290,29 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return results;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function gmailFetch<T>(accessToken: string, path: string): Promise<T> {
-  const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${path}`, {
-    headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store",
-  });
-  if (response.status === 401 || response.status === 403) throw new Error("GMAIL_PERMISSION_DENIED");
-  if (!response.ok) throw new Error(`Gmail API failed (${response.status})`);
-  return response.json() as Promise<T>;
+  for (let attempt = 1; ; attempt++) {
+    const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${path}`, {
+      headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store",
+    });
+    if (response.ok) return response.json() as Promise<T>;
+
+    const body: unknown = await response.json().catch(() => null);
+    if (attempt < GMAIL_ATTEMPTS && isRetryableGmailResponse(response.status, body)) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const backoff = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** (attempt - 1) + Math.random() * 250;
+      await sleep(Math.min(backoff, 8_000));
+      continue;
+    }
+    throw classifyGmailResponse(response.status, body) ?? new Error(`Gmail API failed (${response.status})`);
+  }
+}
+
+/** Errors that will hit every request the same way, so the scan must stop. */
+function isScanFatal(error: unknown) {
+  return error instanceof GmailError && error.kind !== "rate_limited";
 }
 
 type ListResponse = {
@@ -328,7 +353,7 @@ async function fetchHeaders(accessToken: string, ids: string[]): Promise<Message
     try {
       return await gmailFetch<GmailMessage>(accessToken, `/messages/${id}?${query}`);
     } catch (error) {
-      if (error instanceof Error && error.message === "GMAIL_PERMISSION_DENIED") throw error;
+      if (isScanFatal(error)) throw error;
       return null; // a single unreadable message must not fail the whole scan
     }
   });
@@ -359,7 +384,7 @@ async function fetchBodies(accessToken: string, headers: MessageHeader[]): Promi
       const message = await gmailFetch<GmailMessage>(accessToken, `/messages/${header.id}?format=full`);
       return { header, message };
     } catch (error) {
-      if (error instanceof Error && error.message === "GMAIL_PERMISSION_DENIED") throw error;
+      if (isScanFatal(error)) throw error;
       return null;
     }
   });
