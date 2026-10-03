@@ -32,8 +32,19 @@ export async function GET(request: Request) {
     cache: "no-store",
   });
 
-  if (!response.ok) return NextResponse.redirect(new URL("/connect?error=token_exchange_failed", baseUrl));
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string; error_description?: string } | null;
+    console.error("[gmail] token exchange failed", { status: response.status, error: body?.error, description: body?.error_description });
+    return NextResponse.redirect(new URL("/connect?error=token_exchange_failed", baseUrl));
+  }
   const data = (await response.json()) as { access_token: string; refresh_token?: string; expires_in: number; scope: string };
+  // Google's consent screen lets people untick individual scopes. Without
+  // gmail.readonly every scan call is a 403, so catch it here, not mid-scan.
+  if (!data.scope?.includes("https://www.googleapis.com/auth/gmail.readonly")) {
+    console.error("[gmail] consent granted without gmail.readonly", { scope: data.scope });
+    return NextResponse.redirect(new URL("/connect?error=scope_missing", baseUrl));
+  }
+  if (!data.refresh_token) console.warn("[gmail] no refresh token returned; connection will expire in about an hour");
   cookieStore.set(GMAIL_COOKIE, sealGmailToken({
     accessToken: data.access_token,
     refreshToken: data.refresh_token,

@@ -8,6 +8,7 @@ const scanned = ["Subscription confirmations", "Renewal reminders", "Payment rec
 const errors: Record<string, string> = {
   permission_denied: "Gmail permission was denied. Nothing was accessed—you can try again when ready.",
   invalid_oauth_state: "The secure Google connection expired. Please start it again.",
+  scope_missing: "Google connected, but Gmail read access wasn't granted. Try again and tick the box that lets ClearSubscription read your email.",
   token_exchange_failed: "Google could not complete the connection. Check your OAuth settings or try again.",
   google_not_configured: "Google OAuth is not configured on this deployment. Add the required environment variables or use the demo.",
 };

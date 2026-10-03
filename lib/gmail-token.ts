@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { classifyRefreshFailure, GmailError } from "@/lib/gmail-errors";
 
 export const GMAIL_COOKIE = "clearsub_gmail";
 /** Pre-rename cookie name, still read so existing sessions aren't forced to re-consent. */
@@ -25,7 +26,20 @@ export function sealGmailToken(value: GmailToken) {
   return Buffer.concat([iv, tag, encrypted]).toString("base64url");
 }
 
+/**
+ * Opens the cookie. A cookie sealed under a previous AUTH_SECRET cannot be
+ * decrypted; that is an expired connection, not a server fault.
+ */
 export function unsealGmailToken(value: string): GmailToken {
+  try {
+    return unseal(value);
+  } catch (error) {
+    if (error instanceof Error && error.message === "AUTH_SECRET is not configured") throw error;
+    throw new GmailError("token_expired", { reason: "cookie_unreadable" });
+  }
+}
+
+function unseal(value: string): GmailToken {
   const data = Buffer.from(value, "base64url");
   const iv = data.subarray(0, 12);
   const tag = data.subarray(12, 28);
@@ -35,9 +49,13 @@ export function unsealGmailToken(value: string): GmailToken {
   return JSON.parse(Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8")) as GmailToken;
 }
 
-export async function refreshGmailToken(token: GmailToken): Promise<GmailToken> {
-  if (token.expiresAt > Date.now() + 60_000) return token;
-  if (!token.refreshToken) throw new Error("Gmail access expired. Please reconnect Gmail.");
+/** Refreshes when close to expiry, or always when `force` is set (after a 401). */
+export async function refreshGmailToken(token: GmailToken, { force = false } = {}): Promise<GmailToken> {
+  if (!force && token.expiresAt > Date.now() + 60_000) return token;
+  if (!token.refreshToken) {
+    console.error("[gmail] access token expired and no refresh token is stored");
+    throw new GmailError("token_expired", { reason: "no_refresh_token" });
+  }
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -50,7 +68,12 @@ export async function refreshGmailToken(token: GmailToken): Promise<GmailToken> 
     }),
     cache: "no-store",
   });
-  if (!response.ok) throw new Error("Gmail access expired. Please reconnect Gmail.");
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const error = classifyRefreshFailure(response.status, body);
+    console.error("[gmail] token refresh failed", { kind: error.kind, ...error.detail });
+    throw error;
+  }
   const data = (await response.json()) as { access_token: string; expires_in: number; scope?: string };
   return {
     accessToken: data.access_token,

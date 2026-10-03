@@ -4,7 +4,8 @@ import { classifyEmail } from "@/lib/classify";
 import { deduplicateSubscriptions } from "@/lib/dedupe";
 import { demoSubscriptions } from "@/lib/demo-data";
 import { SCAN_WINDOW_MONTHS, scanWindowStart, shortlistGmailEmails } from "@/lib/gmail";
-import { GMAIL_COOKIE, LEGACY_GMAIL_COOKIE, refreshGmailToken, sealGmailToken, unsealGmailToken } from "@/lib/gmail-token";
+import { GmailError, gmailErrorResponse } from "@/lib/gmail-errors";
+import { GMAIL_COOKIE, type GmailToken, LEGACY_GMAIL_COOKIE, refreshGmailToken, sealGmailToken, unsealGmailToken } from "@/lib/gmail-token";
 import type { CandidateEmail, Classification } from "@/lib/types";
 import { buildSubscriptionId } from "@/lib/utils";
 import { groupCandidatesByVendor } from "@/lib/vendor";
@@ -12,6 +13,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
+
+const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 // Classify this many emails at once. Firing every shortlisted email in one
 // unbounded burst trips a fresh key's per-minute limit; too few workers can't
@@ -110,11 +113,26 @@ export async function POST(request: Request) {
   const sealed = cookieStore.get(GMAIL_COOKIE)?.value ?? cookieStore.get(LEGACY_GMAIL_COOKIE)?.value;
   if (!sealed) return NextResponse.json({ error: "Connect Gmail before scanning.", code: "GMAIL_NOT_CONNECTED" }, { status: 403 });
 
-  try {
-    const token = await refreshGmailToken(unsealGmailToken(sealed));
+  const saveToken = (token: GmailToken) =>
     cookieStore.set(GMAIL_COOKIE, sealGmailToken(token), { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 30, path: "/" });
 
-    const { candidates, coverage } = await shortlistGmailEmails(token.accessToken);
+  try {
+    let token = await refreshGmailToken(unsealGmailToken(sealed));
+    saveToken(token);
+    if (token.scope && !token.scope.includes(GMAIL_READONLY_SCOPE)) throw new GmailError("scope_missing", { reason: "stored_scope", googleMessage: token.scope });
+
+    let shortlist;
+    try {
+      shortlist = await shortlistGmailEmails(token.accessToken);
+    } catch (error) {
+      // The stored expiry can be wrong (clock skew, revoked token). Refresh once and retry.
+      if (!(error instanceof GmailError && error.kind === "token_invalid")) throw error;
+      console.warn("[scan] Gmail rejected access token; forcing refresh and retrying once");
+      token = await refreshGmailToken(token, { force: true });
+      saveToken(token);
+      shortlist = await shortlistGmailEmails(token.accessToken);
+    }
+    const { candidates, coverage } = shortlist;
     if (!process.env.OPENAI_API_KEY) return NextResponse.json({ error: "OpenAI is not configured. Add OPENAI_API_KEY or use demo mode.", code: "OPENAI_NOT_CONFIGURED" }, { status: 503 });
 
     const vendorGroups = groupCandidatesByVendor(candidates);
@@ -160,8 +178,15 @@ export async function POST(request: Request) {
       coverage,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Scan failed";
-    if (message.includes("GMAIL_PERMISSION_DENIED") || message.includes("Gmail access expired")) return NextResponse.json({ error: "Gmail permission was denied or expired. Reconnect Gmail and try again.", code: "GMAIL_PERMISSION_DENIED" }, { status: 403 });
+    if (error instanceof GmailError) {
+      const response = gmailErrorResponse(error);
+      // Google's reason (invalid_grant, insufficientPermissions, accessNotConfigured,
+      // rateLimitExceeded, ...) is what tells these apart. Never log tokens.
+      console.error("[scan] Gmail failure", { kind: error.kind, code: response.code, ...error.detail });
+      if (error.kind === "token_expired") { cookieStore.delete(GMAIL_COOKIE); cookieStore.delete(LEGACY_GMAIL_COOKIE); }
+      return NextResponse.json({ error: response.error, code: response.code }, { status: response.status });
+    }
+    console.error("[scan] unexpected failure", errShape(error));
     return NextResponse.json({ error: "We could not complete the scan. Please try again.", code: "SCAN_FAILED" }, { status: 500 });
   }
 }
