@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyGmailResponse, classifyRefreshFailure, GmailError, gmailErrorResponse, isRetryableGmailResponse } from "@/lib/gmail-errors";
-import { shortlistGmailEmails } from "@/lib/gmail";
+import { GMAIL_TIME_BUDGET_MS, shortlistGmailEmails } from "@/lib/gmail";
 
 const googleError = (code: number, reason: string, message = "x") => ({ error: { code, message, errors: [{ reason }] } });
 
@@ -83,4 +83,18 @@ describe("Gmail fetch during a scan", () => {
     }));
     await expect(shortlistGmailEmails("token")).resolves.toBeDefined();
   }, 20_000);
+
+  it("never runs past the Gmail time budget, even when Google keeps rate-limiting", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(googleError(429, "rateLimitExceeded")), { status: 429, headers: { "retry-after": "60" } })));
+      const started = Date.now();
+      const outcome = shortlistGmailEmails("token").then(() => null, (error) => error);
+      await vi.runAllTimersAsync();
+      expect(await outcome).toMatchObject({ kind: "rate_limited" });
+      expect(Date.now() - started).toBeLessThanOrEqual(GMAIL_TIME_BUDGET_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -21,17 +21,23 @@ const LIST_PAGE_SIZE = 500;
 
 /**
  * Parallel Gmail requests. Gmail allows 250 quota units per user per second and
- * messages.get costs 5, so ~50 gets/sec. Ten workers on fast metadata calls
- * overshot that and Gmail answered 403 rateLimitExceeded, which the scan used to
- * report as "permission denied". Five stays under the limit; retries cover bursts.
+ * messages.get costs 5, so ~50 gets/sec. Ten workers on fast metadata calls can
+ * overshoot that (Gmail answers 403 rateLimitExceeded); five was too slow to fit
+ * the function limit. Eight, with back-off retries, sits between the two.
  */
-const CONCURRENCY = 5;
+const CONCURRENCY = 8;
 
 /** Attempts per Gmail request when Google rate-limits or returns 5xx. */
 const GMAIL_ATTEMPTS = 4;
 
-/** Headroom inside the 60s Vercel function limit (see maxDuration in the route). */
-const TIME_BUDGET_MS = 40_000;
+/**
+ * Gmail's share of the 60s Vercel function limit. Classification runs after this
+ * and needs the rest, so the Gmail phase must stop on time rather than finish.
+ */
+export const GMAIL_TIME_BUDGET_MS = 25_000;
+
+/** Of the Gmail budget, the time held back for fetching bodies after header triage. */
+const BODY_RESERVE_MS = 7_000;
 
 const SEARCH_TERMS = [
   "subscription", "membership", "renewal", '"auto-renew"', "trial", "payment",
@@ -276,12 +282,20 @@ function billingSubjectScore(subject: string) {
 // Gmail access
 // ---------------------------------------------------------------------------
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {
-  const results: R[] = new Array(items.length);
+/** Items mapLimit never started because the deadline passed (failures are null, not undefined). */
+function countUnstarted(results: unknown[]) {
+  let unstarted = 0;
+  for (let index = 0; index < results.length; index++) if (results[index] === undefined) unstarted++;
+  return unstarted;
+}
+
+/** Like Promise.all with a worker pool; stops starting new items after `deadline`. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>, deadline = Infinity) {
+  const results: Array<R | undefined> = new Array(items.length);
   let cursor = 0;
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (cursor < items.length) {
+      while (cursor < items.length && Date.now() < deadline) {
         const index = cursor++;
         results[index] = await fn(items[index]);
       }
@@ -292,7 +306,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function gmailFetch<T>(accessToken: string, path: string): Promise<T> {
+async function gmailFetch<T>(accessToken: string, path: string, deadline = Infinity): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${path}`, {
       headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store",
@@ -302,9 +316,11 @@ async function gmailFetch<T>(accessToken: string, path: string): Promise<T> {
     const body: unknown = await response.json().catch(() => null);
     if (attempt < GMAIL_ATTEMPTS && isRetryableGmailResponse(response.status, body)) {
       const retryAfter = Number(response.headers.get("retry-after"));
-      const backoff = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** (attempt - 1) + Math.random() * 250;
-      await sleep(Math.min(backoff, 8_000));
-      continue;
+      const backoff = Math.min(retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** (attempt - 1) + Math.random() * 250, 8_000);
+      if (Date.now() + backoff < deadline) {
+        await sleep(backoff);
+        continue;
+      }
     }
     throw classifyGmailResponse(response.status, body) ?? new Error(`Gmail API failed (${response.status})`);
   }
@@ -336,7 +352,7 @@ async function listAllMessageIds(accessToken: string, query: string, deadline: n
     });
     if (pageToken) params.set("pageToken", pageToken);
 
-    const page = await gmailFetch<ListResponse>(accessToken, `/messages?${params.toString()}`);
+    const page = await gmailFetch<ListResponse>(accessToken, `/messages?${params.toString()}`, deadline);
     matchedEstimate = page.resultSizeEstimate ?? matchedEstimate;
     for (const message of page.messages || []) ids.push(message.id);
     pageToken = page.nextPageToken;
@@ -347,16 +363,16 @@ async function listAllMessageIds(accessToken: string, query: string, deadline: n
 }
 
 /** Header-only fetch. format=metadata means Gmail never ships the body. */
-async function fetchHeaders(accessToken: string, ids: string[]): Promise<MessageHeader[]> {
+async function fetchHeaders(accessToken: string, ids: string[], deadline: number): Promise<{ headers: MessageHeader[]; unstarted: number }> {
   const query = "format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date";
   const raw = await mapLimit(ids, CONCURRENCY, async (id) => {
     try {
-      return await gmailFetch<GmailMessage>(accessToken, `/messages/${id}?${query}`);
+      return await gmailFetch<GmailMessage>(accessToken, `/messages/${id}?${query}`, deadline);
     } catch (error) {
       if (isScanFatal(error)) throw error;
       return null; // a single unreadable message must not fail the whole scan
     }
-  });
+  }, deadline);
 
   const headers: MessageHeader[] = [];
   for (const message of raw) {
@@ -374,20 +390,20 @@ async function fetchHeaders(accessToken: string, ids: string[]): Promise<Message
       receivedAt,
     });
   }
-  return headers;
+  return { headers, unstarted: countUnstarted(raw) };
 }
 
 /** Full-body fetch, only for messages that survived triage. */
-async function fetchBodies(accessToken: string, headers: MessageHeader[]): Promise<CandidateEmail[]> {
+async function fetchBodies(accessToken: string, headers: MessageHeader[], deadline: number): Promise<{ candidates: CandidateEmail[]; unstarted: number }> {
   const raw = await mapLimit(headers, CONCURRENCY, async (header) => {
     try {
-      const message = await gmailFetch<GmailMessage>(accessToken, `/messages/${header.id}?format=full`);
+      const message = await gmailFetch<GmailMessage>(accessToken, `/messages/${header.id}?format=full`, deadline);
       return { header, message };
     } catch (error) {
       if (isScanFatal(error)) throw error;
       return null;
     }
-  });
+  }, deadline);
 
   const candidates: CandidateEmail[] = [];
   for (const entry of raw) {
@@ -401,7 +417,7 @@ async function fetchBodies(accessToken: string, headers: MessageHeader[]): Promi
       snippet: billingExcerpt(body || decodeEntities(entry.message.snippet || "")),
     });
   }
-  return candidates;
+  return { candidates, unstarted: countUnstarted(raw) };
 }
 
 // ---------------------------------------------------------------------------
@@ -412,11 +428,12 @@ export async function shortlistGmailEmails(
   accessToken: string,
   now = new Date(),
 ): Promise<ShortlistResult> {
-  const deadline = Date.now() + TIME_BUDGET_MS;
+  const deadline = Date.now() + GMAIL_TIME_BUDGET_MS;
+  const headerDeadline = deadline - BODY_RESERVE_MS;
   const query = buildSearchQuery(now);
 
-  const { ids, matchedEstimate, hitLimit } = await listAllMessageIds(accessToken, query, deadline);
-  const headers = await fetchHeaders(accessToken, ids);
+  const { ids, matchedEstimate, hitLimit } = await listAllMessageIds(accessToken, query, headerDeadline);
+  const { headers, unstarted: headersSkipped } = await fetchHeaders(accessToken, ids, headerDeadline);
   const triaged = headers.filter(isLikelyBillingHeader);
   const { selected, distinctSenders } = selectPerSender(triaged);
 
@@ -424,9 +441,10 @@ export async function shortlistGmailEmails(
     .sort((a, b) => b.receivedAt - a.receivedAt)
     .slice(0, MAX_BODIES_FETCHED);
 
-  const candidates = (await fetchBodies(accessToken, budgeted)).filter(isLikelySubscription);
+  const bodies = await fetchBodies(accessToken, budgeted, deadline);
+  const candidates = bodies.candidates.filter(isLikelySubscription);
 
-  const outOfTime = Date.now() > deadline;
+  const outOfTime = headersSkipped > 0 || bodies.unstarted > 0;
   const truncationReason: ScanCoverage["truncationReason"] = outOfTime
     ? "time_budget"
     : hitLimit

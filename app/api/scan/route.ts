@@ -14,6 +14,25 @@ import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
 
+// Whole-request budget. If the function runs past maxDuration, Vercel kills it
+// and returns a plain-text error page, which the client can't parse. So stop
+// starting new classifications at CLASSIFY_START_CUTOFF_MS, abandon any still
+// running at RESPONSE_CUTOFF_MS, and return what we have, marked as partial.
+const CLASSIFY_START_CUTOFF_MS = 48_000;
+const RESPONSE_CUTOFF_MS = 54_000;
+
+class ScanTimeout extends Error {}
+
+function withDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return Promise.reject(new ScanTimeout());
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new ScanTimeout()), remaining); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 
 // Classify this many emails at once. Firing every shortlisted email in one
@@ -41,27 +60,30 @@ function isFatalClassifyError(error: unknown): boolean {
 
 // Retry only failures that a retry can actually help: rate limits (but not an
 // empty balance) and upstream 5xx. Auth/quota/model errors fail fast.
-async function classifyWithRetry(candidate: CandidateEmail, safetyIdentifier: string): Promise<Classification> {
+async function classifyWithRetry(candidate: CandidateEmail, safetyIdentifier: string, deadline: number): Promise<Classification> {
   let lastError: unknown;
   for (let attempt = 0; attempt < CLASSIFY_ATTEMPTS; attempt++) {
     try {
-      return await classifyEmail(candidate, safetyIdentifier);
+      return await withDeadline(classifyEmail(candidate, safetyIdentifier), deadline);
     } catch (error) {
       lastError = error;
       const { status, code } = errShape(error);
       const retryable = (status === 429 && code !== "insufficient_quota") || (typeof status === "number" && status >= 500);
       if (!retryable || attempt === CLASSIFY_ATTEMPTS - 1) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 600 * 2 ** attempt + Math.floor(Math.random() * 250)));
+      const backoff = 600 * 2 ** attempt + Math.floor(Math.random() * 250);
+      if (Date.now() + backoff >= deadline) throw new ScanTimeout();
+      await new Promise((resolve) => setTimeout(resolve, backoff));
     }
   }
   throw lastError;
 }
 
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
-  const results = new Array<PromiseSettledResult<R>>(items.length);
+/** Settled results per item; items not started before `startCutoff` stay undefined. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>, startCutoff = Infinity): Promise<Array<PromiseSettledResult<R> | undefined>> {
+  const results = new Array<PromiseSettledResult<R> | undefined>(items.length);
   let cursor = 0;
   async function worker() {
-    for (let index = cursor++; index < items.length; index = cursor++) {
+    for (let index = cursor++; index < items.length && Date.now() < startCutoff; index = cursor++) {
       try {
         results[index] = { status: "fulfilled", value: await fn(items[index], index) };
       } catch (reason) {
@@ -87,6 +109,7 @@ function describeScanFailure(reasons: unknown[]): { status: number; code: string
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const body = await request.json().catch(() => ({})) as { demo?: boolean };
   if (body.demo) {
     return NextResponse.json({
@@ -126,7 +149,7 @@ export async function POST(request: Request) {
       shortlist = await shortlistGmailEmails(token.accessToken);
     } catch (error) {
       // The stored expiry can be wrong (clock skew, revoked token). Refresh once and retry.
-      if (!(error instanceof GmailError && error.kind === "token_invalid")) throw error;
+      if (!(error instanceof GmailError && error.kind === "token_invalid") || Date.now() - startedAt > 10_000) throw error;
       console.warn("[scan] Gmail rejected access token; forcing refresh and retrying once");
       token = await refreshGmailToken(token, { force: true });
       saveToken(token);
@@ -141,15 +164,20 @@ export async function POST(request: Request) {
     const settled = await mapWithConcurrency(vendorGroups, CLASSIFY_CONCURRENCY, async ({ candidate }) => {
       if (fatalError) throw fatalError;
       try {
-        return await classifyWithRetry(candidate, safetyIdentifier);
+        return await classifyWithRetry(candidate, safetyIdentifier, startedAt + RESPONSE_CUTOFF_MS);
       } catch (error) {
         if (isFatalClassifyError(error)) fatalError = error;
         throw error;
       }
-    });
+    }, startedAt + CLASSIFY_START_CUTOFF_MS);
     let invalidResponses = 0;
+    let timedOut = 0;
     const failureReasons: unknown[] = [];
     const subscriptions = settled.flatMap((result, index) => {
+      if (!result || (result.status === "rejected" && result.reason instanceof ScanTimeout)) {
+        timedOut += 1;
+        return [];
+      }
       if (result.status === "rejected") {
         invalidResponses += 1;
         failureReasons.push(result.reason);
@@ -164,7 +192,8 @@ export async function POST(request: Request) {
       const email = group.candidate;
       return [{ ...classification, id: buildSubscriptionId(group.key, group.key), sourceEmailId: email.id, subject: email.subject, sender: email.sender, receivedDate: email.receivedDate, userStatus: null, duplicateCount: group.sourceEmails.length, isDemo: false }];
     });
-    if (vendorGroups.length > 0 && invalidResponses === vendorGroups.length) {
+    if (timedOut > 0) console.warn("[scan] time budget reached; returning partial results", { classified: vendorGroups.length - timedOut, timedOut, elapsedMs: Date.now() - startedAt });
+    if (vendorGroups.length > 0 && timedOut < vendorGroups.length && invalidResponses === vendorGroups.length - timedOut) {
       const failure = describeScanFailure(failureReasons);
       console.error("[scan] every classification failed", { attempted: vendorGroups.length, ...failure.log });
       return NextResponse.json({ error: failure.error, code: failure.code }, { status: failure.status });
@@ -175,7 +204,7 @@ export async function POST(request: Request) {
       shortlisted: vendorGroups.length,
       invalidResponses,
       demo: false,
-      coverage,
+      coverage: timedOut > 0 ? { ...coverage, truncated: true, truncationReason: "time_budget" as const } : coverage,
     });
   } catch (error) {
     if (error instanceof GmailError) {
