@@ -26,7 +26,15 @@ export function ScanExperience() {
     async function scan() {
       try {
         const response = await fetch("/api/scan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ demo }), signal: controller.signal });
-        const raw = await response.json();
+        // A function killed by Vercel's time limit returns a plain-text error page, not JSON.
+        const text = await response.text();
+        let raw: { error?: string; code?: string };
+        try {
+          raw = JSON.parse(text);
+        } catch {
+          console.error("[scan] non-JSON response", response.status, text.slice(0, 200));
+          throw Object.assign(new Error(response.status === 504 || /timeout/i.test(text) ? "The scan took too long and was stopped. Please try again." : "The server returned an unexpected error. Please try again."), { code: response.status === 504 || /timeout/i.test(text) ? "SCAN_TIMEOUT" : "SCAN_FAILED" });
+        }
         if (!response.ok) throw Object.assign(new Error(raw.error || "Scan failed"), { code: raw.code || "SCAN_FAILED" });
         const data = responseSchema.parse(raw);
         if (!alive || controller.signal.aborted) return;
